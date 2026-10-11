@@ -314,17 +314,12 @@ def finish_research(script,pages,client,reviewer):
                 if attempt==2:raise
                 from modules.research_contract import RESEARCH_PROMPT
                 fixed=client.ask_json(
-                    '修正教学审查问题。返回scene_updates数组，必须包含每个场景的id；只返回需要修改的字段：narration、beats、term_card、teaching_role、learning_goal、visual_steps、title、labels、evidence_ids、visual、source_page、source_crop。'
+                    '修正教学审查问题。返回scene_updates数组，只包含需要修改的场景及其原id；只返回需要修改的字段：narration、beats、term_card、teaching_role、learning_goal、visual_steps、title、labels、evidence_ids、visual、source_page、source_crop。'
                     '不要返回原文引文、脚本、审核记录、profile或metrics。保持id和模块顺序。术语正式名称、解释、作用及类比边界必须进入旁白，不堆未经解释的名词。'
                     '触发词须逐字存在于口播。'+RESEARCH_PROMPT,
                     json.dumps({'issues':str(exc),'scenes':script['scenes'],'original_excerpts':excerpts,'narration_budget':[profile.get('script_min_chars'),profile.get('script_max_chars')]},ensure_ascii=False))
-                updates=fixed.get('scene_updates')
-                if not isinstance(updates,list) or len(updates)!=len(script['scenes']):raise ValueError('教学修订改变分镜数量')
-                by_id={u.get('id'):u for u in updates}
-                if set(by_id)!={s['id'] for s in script['scenes']}:raise ValueError('教学修订场景id不符')
-                allowed={'id','narration','beats','term_card','teaching_role','learning_goal','visual_steps','title','labels','evidence_ids','visual','source_page','source_crop'}
-                if any(set(u)-allowed for u in updates):raise ValueError('教学修订返回了未允许字段')
-                items=[{**s,**by_id[s['id']]} for s in script['scenes']]
+                from modules.research_contract import apply_teaching_updates
+                items=apply_teaching_updates(script['scenes'],fixed.get('scene_updates'))
                 script['scenes']=_prepare(items,excerpts)
                 fit_narration_budget(script,client)
                 validate_storyboard(script,pages)

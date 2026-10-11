@@ -44,3 +44,14 @@ def audit_research(script,pages,reviewer):
     result=reviewer.ask_json('你是研究入门教学审查员。检查旁白而非仅元数据：术语首次出现是否解释正式名称、含义、论文作用及类比边界；机制是否明确输入输出和关键因果；指标、基线、比较条件和消融是否讲清；局限与复现行动是否有用且有证据。原图页是否包含对应方法或结果。教学缺失应阻断。不能因为有标签就认为讲过。论文未报告项允许明确未说明。返回approved布尔和issues字符串数组。',json.dumps({'script':script,'original_pages':pages},ensure_ascii=False))
     if result.get('approved') is not True or result.get('issues')!=[]:raise ValueError('研究教学审查未通过：'+json.dumps(result,ensure_ascii=False))
     return result
+
+
+def apply_teaching_updates(scenes,updates):
+    """Apply partial edits without dropping evidence or accepting unknown IDs."""
+    if not isinstance(updates,list) or not updates:raise ValueError('教学修订为空')
+    ids={s['id'] for s in scenes}
+    by_id={u.get('id'):u for u in updates if isinstance(u,dict)}
+    if len(by_id)!=len(updates) or not set(by_id)<=ids:raise ValueError('教学修订场景id重复或不存在')
+    allowed={'id','narration','beats','term_card','teaching_role','learning_goal','visual_steps','title','labels','evidence_ids','visual','source_page','source_crop'}
+    if any(set(u)-allowed for u in updates):raise ValueError('教学修订返回了未允许字段')
+    return [{**s,**by_id.get(s['id'],{})} for s in scenes]

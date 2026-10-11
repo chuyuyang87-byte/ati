@@ -2,12 +2,19 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
-from modules.research_contract import validate_research,audit_research
+from modules.research_contract import validate_research,audit_research,apply_teaching_updates
 from modules.story_director import load_profile,_prepare
 from modules.source_assets import extract_pages,bind_assets
 from modules.animated_renderer import Animator
 
 class ResearchTests(unittest.TestCase):
+ def test_partial_updates_preserve_other_scenes_and_evidence(self):
+  scenes=[{'id':'a','narration':'旧句','citations':[{'page':1}]},{'id':'b','narration':'保留句'}]
+  fixed=apply_teaching_updates(scenes,[{'id':'a','narration':'解释术语的新句'}])
+  self.assertEqual(fixed[0]['citations'],scenes[0]['citations']);self.assertEqual(fixed[1],scenes[1])
+ def test_updates_cannot_change_module_or_unknown_scene(self):
+  for update in [{'id':'unknown','narration':'新句'},{'id':'a','module':'result'}]:
+   with self.assertRaises(ValueError):apply_teaching_updates([{'id':'a'}],[update])
  def fixture(self):
   scenes=[]
   for i,role in enumerate(['term','term','mechanism','evidence','limitation','reproduction']):
