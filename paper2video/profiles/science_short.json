@@ -1,0 +1,24 @@
+{
+  "name": "science_short",
+  "target_seconds": 90,
+  "width": 720,
+  "height": 1280,
+  "fps": 24,
+  "scene_seconds": 8,
+  "words_per_second": 4.2,
+  "voice_rate": "+8%",
+  "max_caption_chars": 18,
+  "hook_seconds": 3,
+  "style": "生活场景切入、先猜后揭晓、具体动作解释、实测对比、回扣开场",
+  "stage_weights": {
+    "background": 0.25,
+    "method": 0.34,
+    "result": 0.17,
+    "highlight": 0.08,
+    "application": 0.16
+  },
+  "sound_effects": true,
+  "background_music": true,
+  "bgm_volume": 0.18,
+  "bgm_ducking": true
+}

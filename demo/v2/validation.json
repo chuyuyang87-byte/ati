@@ -1,0 +1,65 @@
+{
+  "duration_seconds": 86.87,
+  "target_seconds": 90,
+  "resolution": [
+    720,
+    1280
+  ],
+  "scenes": 12,
+  "captions": 29,
+  "audio_rms_first_8_seconds": 0.10599242895841599,
+  "full_decode_passed": true,
+  "review_model": "deepseek-reasoner",
+  "review_approved": true,
+  "motion": [
+    {
+      "scene_id": "scene_001",
+      "changed_diagram_pixels": 62108
+    },
+    {
+      "scene_id": "scene_002",
+      "changed_diagram_pixels": 47195
+    },
+    {
+      "scene_id": "scene_003",
+      "changed_diagram_pixels": 32502
+    },
+    {
+      "scene_id": "scene_004",
+      "changed_diagram_pixels": 32764
+    },
+    {
+      "scene_id": "scene_005",
+      "changed_diagram_pixels": 85581
+    },
+    {
+      "scene_id": "scene_006",
+      "changed_diagram_pixels": 3359
+    },
+    {
+      "scene_id": "scene_007",
+      "changed_diagram_pixels": 85456
+    },
+    {
+      "scene_id": "scene_008",
+      "changed_diagram_pixels": 85308
+    },
+    {
+      "scene_id": "scene_009",
+      "changed_diagram_pixels": 63646
+    },
+    {
+      "scene_id": "scene_010",
+      "changed_diagram_pixels": 60159
+    },
+    {
+      "scene_id": "scene_011",
+      "changed_diagram_pixels": 85322
+    },
+    {
+      "scene_id": "scene_012",
+      "changed_diagram_pixels": 342469
+    }
+  ],
+  "bytes": 9160312
+}

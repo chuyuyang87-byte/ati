@@ -1,0 +1,26 @@
+{
+  "name": "science_long",
+  "target_seconds": 600,
+  "width": 1280,
+  "height": 720,
+  "fps": 24,
+  "scene_seconds": 10,
+  "words_per_second": 3.3,
+  "voice_rate": "-10%",
+  "max_caption_chars": 26,
+  "hook_seconds": 3,
+  "style": "问题开场、递进类比、机制拆解、证据解读、局限与回扣",
+  "stage_weights": {
+    "background": 0.15,
+    "method": 0.4,
+    "result": 0.2,
+    "highlight": 0.1,
+    "application": 0.15
+  },
+  "sound_effects": true,
+  "background_music": true,
+  "bgm_volume": 0.18,
+  "bgm_ducking": true,
+  "script_min_chars": 1500,
+  "script_max_chars": 2000
+}
