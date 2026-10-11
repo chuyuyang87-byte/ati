@@ -1,19 +1,21 @@
 """Configurable science director, source-bound citations and independent review."""
 import json
+from difflib import SequenceMatcher
 import math
 import re
 from pathlib import Path
 from modules.llm_client import LLMClient, require_strings
 from modules.logic_decomposer import KEYS
+from modules.research_contract import RESEARCH_PROMPT
 
 ROOT=Path(__file__).resolve().parents[1]
-VISUALS={'question','domain_shift','privacy','uncertainty','error_loop','graph','prompts','comparison','boundary','takeaway'}
+VISUALS={'question','domain_shift','privacy','uncertainty','error_loop','graph','prompts','comparison','boundary','takeaway','source_page'}
 CUES={'reveal','focus','link','contrast'}
 SHORT_JARGON=('SPFE','DGCS','MC Dropout','Sinkhorn','最优传输','高阶结构','熵最小化','特征矩阵','反向注意力','端到端')
 
 
 def load_profile(name='science_long',target_seconds=None):
-    if name not in {'science_short','science_long'}:raise ValueError('未知视频风格')
+    if name not in {'science_short','science_long','research_bridge','research_long'}:raise ValueError('未知视频风格')
     profile=json.loads((ROOT/'profiles'/f'{name}.json').read_text(encoding='utf-8'))
     if target_seconds is not None:
         if not 30<=target_seconds<=1200:raise ValueError('目标时长须在30到1200秒之间')
@@ -52,7 +54,7 @@ def validate_storyboard(script,pages,require_all_modules=True):
         if not isinstance(beats,list) or not 1<=len(beats)<=4:raise ValueError('每个场景须有1到4个动作')
         for beat in beats:
             if not isinstance(beat,dict) or beat.get('action') not in CUES or not isinstance(beat.get('cue'),str) or not normalize(beat['cue']) or normalize(beat['cue']) not in normalize(scene['narration']):raise ValueError(f'触发词必须是口播原文：cue={beat.get("cue")}; narration={scene["narration"]}')
-        if scene['visual']=='comparison':
+        if scene['visual']=='comparison' or scene.get('metrics'):
             metrics=scene.get('metrics')
             if not isinstance(metrics,list) or not 2<=len(metrics)<=3:raise ValueError('对比图需要2到3项数据')
             require_strings(scene,('metric_name',))
@@ -61,6 +63,10 @@ def validate_storyboard(script,pages,require_all_modules=True):
                 value=metric.get('value')
                 if isinstance(value,bool) or not isinstance(value,(int,float)) or not 0<=value<=100:raise ValueError('指标须为0到100')
                 if not any(has_number(c['quote'],value) for c in citations):raise ValueError(f'图表数值{value}没有被引用原文支持：{scene.get("evidence_ids")}')
+        if scene['visual']=='source_page':
+            if scene.get('source_page') not in {c['page'] for c in citations}:raise ValueError('原图页必须有该页引用')
+            crop=scene.get('source_crop',[0,0,1,1])
+            if not isinstance(crop,list) or len(crop)!=4 or any(isinstance(x,bool) or not isinstance(x,(int,float)) for x in crop) or not 0<=crop[0]<crop[2]<=1 or not 0<=crop[1]<crop[3]<=1:raise ValueError('原图裁剪须使用合法归一化坐标')
         if scene.get('math'):
             spec=scene['math']
             if not isinstance(spec,dict) or spec.get('kind') not in {'formula','trajectory'}:raise ValueError('数学动画模板无效')
@@ -88,8 +94,25 @@ def _prepare(items,excerpts,start=0,module=None):
     prepared=[]
     for i,s in enumerate(items):
         ids=s.get('evidence_ids')
-        if not isinstance(ids,list) or not 1<=len(ids)<=8 or any(not isinstance(x,str) or x not in excerpts for x in ids):raise ValueError(f'引用编号错误：{ids}')
+        if not isinstance(ids,list) or not 1<=len(ids)<=12 or any(not isinstance(x,str) or x not in excerpts for x in ids):raise ValueError(f'引用编号错误：{ids}')
         ids=list(ids)
+        # First-use term cards explicitly name the concept in the spoken text.
+        # This adds no scientific claim; the complete explanation still faces
+        # factual and teaching review against the original paper.
+        card=s.get('term_card')
+        if s.get('teaching_role')=='term' and isinstance(card,dict):
+            name=card.get('name')
+            if isinstance(name,str) and name.casefold() not in s.get('narration','').casefold():
+                s['narration']=name+'，'+s.get('narration','')
+        # A model may omit an intervening word in a cue. Use only a substantial
+        # literal anchor from that cue, never an invented timestamp or synonym.
+        for beat in s.get('beats',[]):
+            cue=beat.get('cue');speech=s.get('narration','')
+            if isinstance(cue,str) and cue not in speech:
+                match=SequenceMatcher(None,cue,speech,autojunk=False).find_longest_match()
+                if match.size>=4 and match.size>=len(cue)*.5:
+                    beat['requested_cue']=cue
+                    beat['cue']=speech[match.b:match.b+match.size]
         # Bind omitted numeric evidence only when a unique row on an already
         # cited page contains both the exact method label and numeric value.
         # This never changes the metric; independent review checks its meaning.
@@ -113,17 +136,17 @@ def _prepare(items,excerpts,start=0,module=None):
 
 
 SCHEMA='''只返回 scenes 数组。每项格式：{"module":"background/method/result/highlight/application之一",
-"title":"18字以内短句","narration":"口播","visual":"question/domain_shift/privacy/uncertainty/error_loop/graph/prompts/comparison/boundary/takeaway之一",
+"title":"18字以内短句","narration":"口播","visual":"question/domain_shift/privacy/uncertainty/error_loop/graph/prompts/comparison/boundary/takeaway/source_page之一",
 "labels":["最多3个10字内标签"],"beats":[{"cue":"本段口播中原样出现的关键词","action":"reveal/focus/link/contrast之一"}],
 "evidence_ids":["original_excerpts中真实存在的编号"]}。
 comparison项额外提供 metric_name（准确的任务和指标名称）及 metrics:[{"label":"屏幕短方法名","source_label":"原文方法名","value":84.37}]，2到3项。
 图表数字必须包含在选中编号的原文中；不混用不同任务、指标或实验设置。
-每项引用1到8个支持事实的原文编号，不自写引文、不编造编号。
+每项引用1到12个支持事实的原文编号，不自写引文、不编造编号。
 第一场景问句3秒内可说完，不念标题作者。口播先说人话，再解释概念。
 生活类比必须说明只是帮助理解，不要把像素示意冒充真正的医学影像。
 每场只说一个新信息，不重复开场；不归纳全部五模块到每一个模块。
 专业术语第一次出现就用生活比喻解释，不说颠覆性、已临床可用或诊断准确率。
-结尾保留实际部署尚未验证等边界，并用一句话回答开场问题。
+结尾保留原文报告的局限；没有临床验证描述应说“论文未报告”，不要断言“未验证”。用一句话回答开场问题。
 方法镜头优先graph、prompts；结果镜头优先comparison；倒数第二镜boundary，最后一镜takeaway。
 讲隐私和旧数据不可用时选privacy，讲挑选有把握区域时选uncertainty；不要把不同机制都画成双路提示。
 仅当原文有数学公式或机器人轨迹解释需求，可添加math字段调用Manim固定模板：
@@ -136,7 +159,7 @@ comparison项额外提供 metric_name（准确的任务和指标名称）及 met
 def review_story(script,pages,reviewer):
     checks=[]
     for scene in script['scenes']:
-        if scene['visual']=='comparison':
+        if scene['visual']=='comparison' or scene.get('metrics'):
             metrics=scene['metrics']
             checks.append({'scene_id':scene['id'],'values':metrics,
                            'arithmetic_difference_percentage_points':metrics[-1]['value']-metrics[0]['value']})
@@ -146,7 +169,7 @@ def review_story(script,pages,reviewer):
         '日常类比可以是作者未使用的，只要不冒充实验事实且说明类比边界。'
         '两个以百分数表达的DSC数值相减，得到百分点差；以表格数值直接算出的差是有效结论。'
         '论文把差写成%不代表它必然是相对提升，不将正确的百分点算术判为错误。'
-        '必须检查每项引用是否支持对应主张，不能仅因数字出现在原文就通过。'
+        '必须检查每项引用是否支持对应主张，不能仅因数字出现在原文就通过。最优、领先、低于或优于等比较不成立是阻断问题，不能只放建议。图注碎片或OCR乱码不支持对应主张也是阻断问题。'
         '返回 {"approved":true/false,"issues":["阻断性问题"],"suggestions":["非阻断改进"],"summary":"说明"}。',
         json.dumps({'script':script,'computed_checks':checks,
                     'original_pages':[p for p in pages if p['number'] in {c['page'] for s in script['scenes'] for c in s['citations']}]},ensure_ascii=False))
@@ -164,7 +187,7 @@ def fit_narration_budget(script,client):
         result=client.ask_json(
             f'调整长版口播预算，保持{count}个场景的id、顺序和内容主题。总计{minimum}到{maximum}个汉字。'
             f'每镜约{math.ceil(minimum/count)}到{maximum//count}字。只返回 scenes数组，每项仅id、narration和beats。'
-            '根据既有证据压缩或扩展解释，不添加实验数字或编造事实。第一镜仍用短问句开场。'
+            '根据既有证据压缩或扩展解释，不添加实验数字或编造事实。术语镜必须保留term_card.name及首次出现的全称、含义、论文作用和类比边界，不能删掉这些解释来凑预算。第一镜仍用短问句开场。'
             'beats的cue必须逐字出现在对应口播中，action保持合法。',json.dumps(script['scenes'],ensure_ascii=False))
         items=result.get('scenes')
         if not isinstance(items,list) or len(items)!=count:raise ValueError('预算修订改变场景数')
@@ -188,8 +211,9 @@ def make_story(logic,terms,pages,profile,client=None,reviewer=None,draft=None):
         counts['application']+=1;counts['method']-=1
     budget=max(25,round(profile['target_seconds']*profile['words_per_second']/total))
     selected=[p for p in pages if p['number'] in {1,2,3,4,5,6,7,8,16}]
+    if profile.get("research_depth"):selected=pages
     excerpts=_excerpts(selected)
-    payload={'outline':outline,'logic':logic,'original_excerpts':excerpts,'scene_counts':counts}
+    payload={'outline':outline,'logic':logic,'original_excerpts':excerpts,'scene_counts':counts,'terms':terms,'audience':profile.get('audience')}
     if total<=16:
         batches=[(None,total)]
     else:
@@ -198,8 +222,12 @@ def make_story(logic,terms,pages,profile,client=None,reviewer=None,draft=None):
     for module,count in batches:
         instruction=SCHEMA+f'本次必须生成{count}镜，每镜口播约{budget}个中文字符。'
         instruction+='语言示范：坏例子“可微图聚类提炼高阶结构”；好例子“先把相似的区域拉到一组，再让这组区域互相校对，别只相信自己的猜测”。至少一镜用“就像”讲具体生活类比并解释它与论文的联系。'
-        if total<=16:
+        if total<=16 and not profile.get('research_depth'):
             instruction+='这是给完全不懂机器学习的人看的短片，禁止在口播和标题使用以下词，改用日常动作解释：'+','.join(SHORT_JARGON)+'。方法只解释有把握的区域、相似区域组、旧经验和新差异，不堆算法名。结果只用两项主实验平均DSC，不使用长期实验的另一套指标来挤占时间。'
+        if profile.get('research_depth'):
+            from modules.research_contract import RESEARCH_PROMPT
+            instruction+=RESEARCH_PROMPT
+            if total<=16:instruction+='三分钟内只安排2到3个最关键术语镜，解释清楚胜过堆名词；其他必要术语首次出现用一句直观定义。'
         if module:instruction+=f'只写当前模块{module}，不可重复已经覆盖的内容；不要再次抛开场问题。'
         else:instruction+='一次写完完整短片，严格遵守scene_counts的五模块数量与顺序。'
         last_error=None
@@ -208,20 +236,32 @@ def make_story(logic,terms,pages,profile,client=None,reviewer=None,draft=None):
             if draft is not None and attempt==0 and not scenes:
                 response=draft
             elif previous is not None and last_error and ('术语' in last_error or '触发词' in last_error):
-                response=client.ask_json('只修正草稿的文字与动作cue。保持场景数、模块、evidence_ids、metrics不变；可以调整标题、口播、标签、beats。cue必须原样出现在修正后的口播中。返回完整scenes。'+last_error,
-                    json.dumps({'draft':previous,'style_example':'先把相似的区域拉到一组，再让它们互相校对。','forbidden_short_terms':SHORT_JARGON},ensure_ascii=False))
+                response=client.ask_json('只修正草稿的文字与动作cue。保持场景数、模块、evidence_ids、metrics和教学字段不变；可以调整标题、口播、标签、beats。cue必须原样出现在修正后的口播中。术语镜的term_card.name必须逐字进入对应口播，不能只留在标题或卡片里；保留并解释专业术语、全称、含义、论文作用和类比边界。返回完整scenes。'+last_error,
+                    json.dumps({'draft':previous,'style_example':'先把相似的区域拉到一组，再让它们互相校对。','forbidden_short_terms':[] if profile.get('research_depth') else SHORT_JARGON},ensure_ascii=False))
             else:
                 response=client.ask_json(instruction+(f'上次校验失败：{last_error}；在previous_invalid_response基础上修正，尽量保留已有正确内容。' if last_error else ''),json.dumps({**payload,'already_covered':[s['narration'] for s in scenes],'previous_invalid_response':previous},ensure_ascii=False))
             try:
                 items=response.get('scenes')
                 if not isinstance(items,list) or len(items)!=count:raise ValueError('场景数量不符')
                 prepared=_prepare(items,excerpts,len(scenes),module)
-                if total<=16:
+                if total<=16 and not profile.get('research_depth'):
                     jargon=[x for s in prepared for x in SHORT_JARGON if x.casefold() in (s['narration']+s['title']).casefold()]
                     if jargon:raise ValueError('短版仍有生硬术语，须人话改写：'+','.join(sorted(set(jargon))))
                     if not any('就像' in s['narration'] for s in prepared):raise ValueError('缺少具体生活类比')
+                if profile.get('research_depth') and not any(s['module']=='result' and s['visual']=='source_page' for s in [*scenes,*prepared]):
+                    # Show the exact original table backing an existing chart.
+                    # This changes the presentation only, not evidence or values.
+                    for s in prepared:
+                        if s['module']=='result' and s.get('metrics'):
+                            numeric=[c for c in s['citations'] if any(has_number(c['quote'],m['value']) for m in s['metrics'])]
+                            if numeric and len({c['page'] for c in numeric})==1:
+                                s.update(visual='source_page',source_page=numeric[0]['page'],source_crop=[0,0,1,1])
+                                break
                 candidate={**outline,'scenes':[*scenes,*prepared]}
                 validate_storyboard(candidate,pages,require_all_modules=module is None)
+                if profile.get('research_depth') and module is None:
+                    from modules.research_contract import validate_research
+                    validate_research(candidate)
                 scenes.extend(prepared);break
             except (ValueError,TypeError,KeyError) as exc:
                 last_error=str(exc)
@@ -229,8 +269,8 @@ def make_story(logic,terms,pages,profile,client=None,reviewer=None,draft=None):
                 if attempt==2:
                     (ROOT/'output'/'director_debug.json').write_text(json.dumps(response,ensure_ascii=False,indent=2))
                     raise ValueError(f'分镜校验失败：{last_error}') from exc
-        print(f'编导完成：{module or "完整短片"}，{count}镜',flush=True)
-    script={**outline,'version':2,'profile':profile,'target_seconds':profile['target_seconds'],
+        print(f'编导完成：{module or ("研究分镜" if profile.get("research_depth") else "完整短片")}，{count}镜',flush=True)
+    script={**outline,'version':3 if profile.get('research_depth') else 2,'profile':profile,'target_seconds':profile['target_seconds'],
             'estimated_seconds':sum(len(normalize(s['narration'])) for s in scenes)/profile['words_per_second'],'scenes':scenes}
     validate_storyboard(script,pages)
     fit_narration_budget(script,client)
@@ -246,7 +286,7 @@ def make_story(logic,terms,pages,profile,client=None,reviewer=None,draft=None):
             path=ROOT/'output'/'rejected_story.json';path.parent.mkdir(parents=True,exist_ok=True)
             path.write_text(json.dumps({'script':script,'reviews':reviews},ensure_ascii=False,indent=2))
             raise ValueError('独立审查仍未通过，脚本已保存供诊断')
-        fixed=client.ask_json(SCHEMA+'修正审核发现的阻断问题，保持全部场景数和五模块顺序，不删除正确证据。只返回修正后的scenes。',json.dumps({'script':script,'issues':review.get('issues'),'original_excerpts':excerpts},ensure_ascii=False))
+        fixed=client.ask_json(SCHEMA+(RESEARCH_PROMPT if profile.get('research_depth') else '')+'修正审核发现的阻断问题，保持全部场景数和五模块顺序，不删除正确证据。只返回修正后的scenes。',json.dumps({'script':script,'issues':review.get('issues'),'original_excerpts':excerpts},ensure_ascii=False))
         items=fixed.get('scenes')
         if not isinstance(items,list) or len(items)!=len(scenes):raise ValueError('修订场景数量变化')
         script['scenes']=_prepare(items,excerpts)
@@ -256,10 +296,43 @@ def make_story(logic,terms,pages,profile,client=None,reviewer=None,draft=None):
     (ROOT/'output'/'reviewed_story.json').write_text(json.dumps(script,ensure_ascii=False,indent=2),encoding='utf-8')
     # Summary generation is also reviewed against the source.
     summary=client.ask_json('根据已审核分镜生成一页总结。返回 title(18字内)、points(3条，每条20字内)、takeaway(面向学生的一个实际学习启发，30字内)。只陈述已有内容，不添加事实。',json.dumps(script,ensure_ascii=False))
-    require_strings(summary,('title','takeaway'))
-    if not isinstance(summary.get('points'),list) or len(summary['points'])!=3 or any(not isinstance(x,str) or not 1<=len(x)<=20 for x in summary['points']):raise ValueError('总结卡片格式无效')
-    script['summary_card']=summary
-    return finish_summary(script,client,reviewer,summary)
+    script=finish_summary(script,client,reviewer,summary)
+    return finish_research(script,pages,client,reviewer)
+
+
+def finish_research(script,pages,client,reviewer):
+    profile=script['profile'];excerpts=_excerpts(pages)
+    (ROOT/'output'/'research_checkpoint.json').write_text(json.dumps(script,ensure_ascii=False,indent=2))
+    if profile.get('research_depth'):
+        from modules.research_contract import audit_research
+        for attempt in range(3):
+            try:
+                script['teaching_review']=audit_research(script,pages,reviewer)
+                break
+            except ValueError as exc:
+                print('研究教学审查待修订：'+str(exc),flush=True)
+                if attempt==2:raise
+                from modules.research_contract import RESEARCH_PROMPT
+                fixed=client.ask_json(
+                    '修正教学审查问题。返回scene_updates数组，必须包含每个场景的id；只返回需要修改的字段：narration、beats、term_card、teaching_role、learning_goal、visual_steps、title、labels、evidence_ids、visual、source_page、source_crop。'
+                    '不要返回原文引文、脚本、审核记录、profile或metrics。保持id和模块顺序。术语正式名称、解释、作用及类比边界必须进入旁白，不堆未经解释的名词。'
+                    '触发词须逐字存在于口播。'+RESEARCH_PROMPT,
+                    json.dumps({'issues':str(exc),'scenes':script['scenes'],'original_excerpts':excerpts,'narration_budget':[profile.get('script_min_chars'),profile.get('script_max_chars')]},ensure_ascii=False))
+                updates=fixed.get('scene_updates')
+                if not isinstance(updates,list) or len(updates)!=len(script['scenes']):raise ValueError('教学修订改变分镜数量')
+                by_id={u.get('id'):u for u in updates}
+                if set(by_id)!={s['id'] for s in script['scenes']}:raise ValueError('教学修订场景id不符')
+                allowed={'id','narration','beats','term_card','teaching_role','learning_goal','visual_steps','title','labels','evidence_ids','visual','source_page','source_crop'}
+                if any(set(u)-allowed for u in updates):raise ValueError('教学修订返回了未允许字段')
+                items=[{**s,**by_id[s['id']]} for s in script['scenes']]
+                script['scenes']=_prepare(items,excerpts)
+                fit_narration_budget(script,client)
+                validate_storyboard(script,pages)
+                factual=review_story(script,pages,reviewer)
+                if factual.get('approved') is not True or factual.get('issues')!=[]:raise ValueError('教学修订后的事实审查未通过')
+                script['reviews'].append(factual)
+                script=finish_summary(script,client,reviewer)
+    return script
 
 
 def finish_summary(script,client,reviewer,summary=None):

@@ -22,7 +22,7 @@ from modules.quality_report import validate_output
 def main():
     parser=argparse.ArgumentParser(description='论文转动态科普视频；大模型调用会产生费用')
     parser.add_argument('pdf',type=Path);parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--profile',choices=['science_short','science_long'],default='science_long')
+    parser.add_argument('--profile',choices=['science_short','science_long','research_bridge','research_long'],default='research_long')
     parser.add_argument('--duration',type=int)
     parser.add_argument('--analysis-dir',type=Path,help='复用另一目录中同一PDF的已验证分析')
     parser.add_argument('--reuse-analysis',action='store_true')
@@ -60,6 +60,13 @@ def main():
         if not script.get('reviews') or script['reviews'][-1].get('approved') is not True:raise ValueError('分镜未经独立审查')
     else:
         script=save('script',write_script(logic,terms,[asdict(p) for p in paper.pages],profile['target_seconds'],args.profile))
+    if profile.get('research_depth'):
+        from modules.research_contract import validate_research
+        from modules.source_assets import extract_pages,bind_assets
+        validate_research(script)
+        if not script.get('teaching_review',{}).get('approved'):raise ValueError('研究版缺少教学审查')
+        bind_assets(script,extract_pages(args.pdf,root/'source_assets'))
+        save('script',script)
     for scene in script['scenes']:save_story_card(scene,profile,root/'cards'/f'{scene["id"]}.png')
     save_summary_card(script['summary_card'],profile,root/'summary.png')
     write_article(script,root/'article.md')

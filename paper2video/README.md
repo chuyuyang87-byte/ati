@@ -97,3 +97,15 @@ TTS会加载平台 `SSL_CERT_FILE` CA，保持TLS验证开启。
 
 旧样片 `demo/paper2video-spegc.mp4` 为6分24秒文字卡片版，保留用于对比。
 新版 [demo/v2/video.mp4](../demo/v2/video.mp4) 实测86.87秒，12个动态分镜，另附推文、总结图、字幕与验证记录；不把短版或旧样片称为已完成十分钟动画长版。
+
+## v3 研究入门版（当前默认）
+
+默认 `research_long`，目标十分钟；三分钟验证配置为 `research_bridge`。
+旧 `science_short` / `science_long` 仍可显式选择。
+
+```bash
+python main.py /path/to/paper.pdf --profile research_bridge --output output/research --prepare-only
+```
+
+新增原PDF页面提取与哈希追溯、术语首次解释卡、输入输出和步骤要求、实验条件、局限与复现行动，以及独立教学审查。配置见 [研究版说明](docs/RESEARCH_EDITION.md)。
+原页展示已接入渲染，但自动识别图框和高质量逐层重绘尚未完成；不要把配置更新称为新版视频已制作。

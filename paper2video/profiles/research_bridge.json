@@ -1,0 +1,28 @@
+{
+  "name": "research_bridge",
+  "target_seconds": 180,
+  "width": 1280,
+  "height": 720,
+  "fps": 24,
+  "scene_seconds": 12,
+  "words_per_second": 3.6,
+  "voice_rate": "+0%",
+  "max_caption_chars": 26,
+  "hook_seconds": 3,
+  "style": "问题切入→术语与设定→原图逐步解释机制→基线及消融→局限与复现路线",
+  "stage_weights": {
+    "background": 0.2,
+    "method": 0.4,
+    "result": 0.2,
+    "highlight": 0.07,
+    "application": 0.13
+  },
+  "sound_effects": true,
+  "background_music": true,
+  "bgm_volume": 0.18,
+  "bgm_ducking": true,
+  "script_min_chars": 520,
+  "script_max_chars": 760,
+  "audience": "已掌握基础、希望入门研究的学生",
+  "research_depth": true
+}

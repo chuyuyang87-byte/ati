@@ -12,7 +12,7 @@ def write_script(logic,terms,pages,target_seconds=None,profile='science_long',cl
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='生成有原文证据、独立审查和动作指令的口播分镜')
     parser.add_argument('folder',type=Path)
-    parser.add_argument('--profile',choices=['science_short','science_long'],default='science_long')
+    parser.add_argument('--profile',choices=['science_short','science_long','research_bridge','research_long'],default='research_long')
     parser.add_argument('--duration',type=int)
     args=parser.parse_args()
     paper=json.loads((args.folder/'paper.json').read_text(encoding='utf-8'))

@@ -12,6 +12,11 @@ def write_article(script,output):
     for scene in script['scenes']:
         pages=sorted({c['page'] for c in scene.get('citations',[])})
         parts.extend([f'## {scene["title"]}',f'![{scene["title"]}](cards/{scene["id"]}.png)',scene['narration']])
+        if scene.get('term_card'):
+            card=scene['term_card']
+            parts.extend(['**'+card['name']+'（'+card['full_name']+'）**',card['definition'],'论文作用：'+card['paper_role'],'类比边界：'+card['analogy_limit']])
+        if scene.get('source_asset'):
+            parts.append('![论文原页](source_assets/page_'+str(scene['source_page']).zfill(3)+'.png)')
         if pages:parts.append('原文依据：第'+ '、'.join(map(str,pages))+'页。')
     parts.append('示意动画用于解释机制，不能当作真实实验影像；研究结果不等于临床验证。')
     output.write_text('\n\n'.join(parts)+'\n',encoding='utf-8');return output

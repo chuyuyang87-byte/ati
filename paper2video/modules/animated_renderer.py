@@ -23,6 +23,16 @@ class Animator:
         self.scene=scene;self.profile=profile
         self.width=profile['width'];self.height=profile['height']
         self.portrait=self.height>self.width
+        self.source_image=None
+        if scene.get('visual')=='source_page':
+            asset=Path(scene.get('source_asset',''))
+            if not asset.is_file():raise ValueError('缺少原文素材，先运行主流程提取PDF页面')
+            import hashlib
+            if hashlib.sha256(asset.read_bytes()).hexdigest()!=scene.get('source_sha256'):raise ValueError('原文素材校验失败')
+            with Image.open(asset) as original:
+                image=original.convert('RGB')
+            crop=scene.get('source_crop',[0,0,1,1]);w,h=image.size
+            self.source_image=image.crop(tuple(round(v*(w if i%2==0 else h)) for i,v in enumerate(crop)))
         self.events=scene.get('events',[])
 
     def draw(self,t,duration,caption='',caption_progress=0.0):
@@ -35,7 +45,20 @@ class Animator:
         impulse=ease((t-latest)/0.6)
         p=min(1,t/max(duration,0.01))
         kind=self.scene['visual'];labels=self.scene.get('labels',['先看问题','看清机制','得到答案'])
-        self.illustrate(a,kind,p,t,impulse,labels)
+        if kind=='source_page':
+            panel=self.source_image.copy()
+            panel.thumbnail((680,640),Image.Resampling.LANCZOS)
+            art.paste(panel,((720-panel.width)//2,80+(640-panel.height)//2))
+            self.label(a,360,20,'论文原页 · 第'+str(self.scene['source_page'])+'页',COLORS['muted'],24)
+            # Each spoken cue advances a numbered explanation; no decorative motion.
+            steps=self.scene.get('visual_steps',[])
+            reached=min(len(steps)-1,max(0,len([e for e in self.events if e['time']<=t])-1))
+            if steps:
+                a.rounded_rectangle((20,655,700,750),radius=12,fill='white')
+                for j,line in enumerate(wrap_text(str(reached+1)+' / '+str(len(steps))+'  '+steps[reached],font(25),640)[:2]):
+                    a.text((40,672+j*33),line,font=font(25),fill=COLORS['ink'])
+        else:
+            self.illustrate(a,kind,p,t,impulse,labels)
         if self.scene.get('summary_card'):
             summary=self.scene['summary_card']
             a.rectangle((0,0,720,760),fill=COLORS['bg'])
@@ -51,7 +74,7 @@ class Animator:
             for i,line in enumerate(wrap_text('学习建议：'+summary['takeaway'],font(21),650)):
                 self.label(a,360,690+i*28,line,COLORS['muted'],21)
         active = [event for event in self.events if event['time'] <= t]
-        if active:
+        if active and kind!='source_page':
             event=active[-1]
             # Timed concept badge and a focus halo appear only when the word
             # is actually spoken, using edge-tts WordBoundary timestamps.
@@ -80,7 +103,14 @@ class Animator:
                 if p>=i*.2:
                     d.rounded_rectangle((40,335+i*70,580,390+i*70),radius=16,fill='white')
                     d.text((60,345+i*70),label,font=font(28),fill=COLORS['teal'])
-        if kind!='comparison':
+        if self.scene.get('term_card') and not portrait:
+            card=self.scene['term_card']
+            d.rectangle((35,315,595,540),fill=COLORS['bg'])
+            lines=wrap_text(card['full_name']+'\n'+card['definition']+'\n本论文：'+card['paper_role'],font(24),535)
+            for i,line in enumerate(lines[:7]):d.text((40,320+i*30),line,font=font(24),fill=COLORS['ink'])
+        if kind=='source_page':
+            d.text((40,1008 if portrait else 550),'原文素材 · 第'+str(self.scene['source_page'])+'页',font=font(20),fill=COLORS['muted'])
+        elif kind!='comparison':
             d.text((40,1008 if portrait else 550),'机制示意 · 非实测影像',font=font(20),fill=COLORS['muted'])
         else:
             pages=','.join(str(x['page']) for x in self.scene['citations'])
